@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IOC Agentic System - Intelligent Operations Center</title>
+    <link rel="icon" type="image/svg+xml" href="/public/favicon.svg">
+    <link rel="stylesheet" href="/src/styles/main.css">
+    <link rel="stylesheet" href="/src/styles/components.css">
+    <link rel="stylesheet" href="/src/styles/animations.css">
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="dark-theme">
+    
+    <!-- Main App Container -->
+    <div id="app" class="app-container">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <i class="fas fa-brain"></i>
+                    </div>
+                    <div class="logo-text">
+                        <h1>IOC Agentic</h1>
+                        <span>Intelligent Operations Center</span>
+                    </div>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-view="chat">
+                    <i class="fas fa-comments"></i>
+                    <span>Chat Interface</span>
+                    <div class="nav-indicator"></div>
+                </a>
+                <a href="#" class="nav-item" data-view="registry">
+                    <i class="fas fa-database"></i>
+                    <span>API Registry</span>
+                    <div class="nav-indicator"></div>
+                </a>
+                <a href="#" class="nav-item" data-view="analytics">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Analytics</span>
+                    <div class="nav-indicator"></div>
+                </a>
+                <a href="#" class="nav-item" data-view="settings">
+                    <i class="fas fa-cog"></i>
+                    <span>Settings</span>
+                    <div class="nav-indicator"></div>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="system-status">
+                    <div class="status-indicator online"></div>
+                    <span>System Online</span>
+                </div>
+                <div class="user-profile">
+                    <div class="user-avatar">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="user-info">
+                        <span class="user-name">Admin User</span>
+                        <span class="user-role">Administrator</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <div class="top-bar-left">
+                    <button class="btn-icon" id="menuToggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="breadcrumb">
+                        <i class="fas fa-home"></i>
+                        <span>/</span>
+                        <span id="currentView">Chat Interface</span>
+                    </div>
+                </div>
+                <div class="top-bar-right">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search..." id="globalSearch">
+                    </div>
+                    <button class="btn-icon" id="themeToggle">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    <button class="btn-icon notifications-btn">
+                        <i class="fas fa-bell"></i>
+                        <span class="badge">3</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- View Container -->
+            <div class="view-container">
+                
+                <!-- Chat View -->
+                <div id="chatView" class="view active">
+                    <div class="chat-container">
+                        <div class="chat-sidebar">
+                            <div class="chat-sidebar-header">
+                                <h3>Conversations</h3>
+                                <button class="btn-icon" id="newChat">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                            <div class="chat-list" id="chatList">
+                                <!-- Chat history will be populated here -->
+                            </div>
+                        </div>
+
+                        <div class="chat-main">
+                            <div class="chat-header">
+                                <div class="chat-info">
+                                    <h3 id="chatTitle">New Conversation</h3>
+                                    <span class="chat-model">Powered by Gemini Pro</span>
+                                </div>
+                                <div class="chat-actions">
+                                    <button class="btn-icon" id="clearChat">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="chat-messages" id="chatMessages">
+                                <div class="welcome-message">
+                                    <div class="welcome-icon">
+                                        <i class="fas fa-robot"></i>
+                                    </div>
+                                    <h2>Welcome to IOC Agentic System</h2>
+                                    <p>Ask me anything about your operations in Vietnamese or English</p>
+                                    <div class="example-queries">
+                                        <div class="example-query" data-query="Mức tiêu thụ điện hôm nay là bao nhiêu?">
+                                            <i class="fas fa-bolt"></i>
+                                            <span>Mức tiêu thụ điện hôm nay?</span>
+                                        </div>
+                                        <div class="example-query" data-query="So sánh lưu lượng giao thông tuần này với tuần trước">
+                                            <i class="fas fa-traffic-light"></i>
+                                            <span>So sánh lưu lượng giao thông</span>
+                                        </div>
+                                        <div class="example-query" data-query="Chất lượng không khí ở Hà Nội như thế nào?">
+                                            <i class="fas fa-wind"></i>
+                                            <span>Chất lượng không khí</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chat-input-container">
+                                <div class="chat-input-wrapper">
+                                    <button class="btn-icon" id="attachBtn">
+                                        <i class="fas fa-paperclip"></i>
+                                    </button>
+                                    <textarea 
+                                        id="chatInput" 
+                                        placeholder="Ask a question in Vietnamese or English..."
+                                        rows="1"
+                                    ></textarea>
+                                    <button class="btn-primary" id="sendBtn">
+                                        <i class="fas fa-paper-plane"></i>
+                                    </button>
+                                </div>
+                                <div class="input-footer">
+                                    <span class="input-hint">Press Enter to send, Shift+Enter for new line</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Registry View -->
+                <div id="registryView" class="view">
+                    <div class="registry-container">
+                        <div class="registry-header">
+                            <h2>API Function Registry</h2>
+                            <div class="registry-actions">
+                                <button class="btn-secondary" id="importBtn">
+                                    <i class="fas fa-upload"></i>
+                                    Import
+                                </button>
+                                <button class="btn-secondary" id="exportBtn">
+                                    <i class="fas fa-download"></i>
+                                    Export
+                                </button>
+                                <button class="btn-primary" id="addFunctionBtn">
+                                    <i class="fas fa-plus"></i>
+                                    Add Function
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="registry-filters">
+                            <div class="filter-group">
+                                <input type="text" placeholder="Search functions..." id="searchFunctions">
+                            </div>
+                            <div class="filter-group">
+                                <select id="filterDomain">
+                                    <option value="">All Domains</option>
+                                    <option value="energy">Energy</option>
+                                    <option value="traffic">Traffic</option>
+                                    <option value="environment">Environment</option>
+                                    <option value="health">Health</option>
+                                    <option value="security">Security</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <select id="filterMethod">
+                                    <option value="">All Methods</option>
+                                    <option value="GET">GET</option>
+                                    <option value="POST">POST</option>
+                                    <option value="PUT">PUT</option>
+                                    <option value="DELETE">DELETE</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="registry-content">
+                            <div class="functions-grid" id="functionsGrid">
+                                <!-- Functions will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analytics View -->
+                <div id="analyticsView" class="view">
+                    <div class="view-header">
+                        <h2>
+                            <i class="fas fa-chart-line"></i>
+                            Analytics Dashboard
+                        </h2>
+                        <div class="view-actions">
+                            <button class="btn-icon" id="refresh-analytics" title="Refresh">
+                                <i class="fas fa-refresh"></i>
+                            </button>
+                            <label class="switch-label">
+                                <input type="checkbox" id="auto-refresh-toggle">
+                                <span>Auto-refresh</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Overview Cards -->
+                    <div id="analytics-overview"></div>
+                    
+                    <!-- Charts Section -->
+                    <div class="analytics-charts">
+                        <div class="chart-card">
+                            <h3>Conversation Trends</h3>
+                            <canvas id="conversation-chart" width="800" height="300"></canvas>
+                        </div>
+                        <div class="chart-card">
+                            <h3>Function Usage</h3>
+                            <canvas id="function-usage-chart" width="800" height="300"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Recent Activity -->
+                    <div class="analytics-section">
+                        <h3>Recent Activity</h3>
+                        <div id="recent-activity"></div>
+                    </div>
+                    
+                    <!-- Insights -->
+                    <div class="analytics-section">
+                        <h3>Insights</h3>
+                        <div id="analytics-insights"></div>
+                    </div>
+                </div>
+
+                <!-- Settings View -->
+                <div id="settingsView" class="view">
+                    <!-- Settings will be rendered dynamically by SettingsController -->
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <p>Processing your request...</p>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Modal Container -->
+    <div id="modalContainer" class="modal-container"></div>
+
+    <!-- Scripts -->
+    <script>
+        // Debug: Log trước khi load module
+        console.log('%c='.repeat(50), 'color: #6366f1');
+        console.log('%c🔍 INDEX.HTML LOADED', 'color: #6366f1; font-size: 18px; font-weight: bold');
+        console.log('%cTime:', 'font-weight: bold', new Date().toLocaleTimeString());
+        console.log('%cLocation:', 'font-weight: bold', window.location.href);
+        console.log('%c='.repeat(50), 'color: #6366f1');
+        
+        // Catch module loading errors
+        window.addEventListener('error', (e) => {
+            if (e.filename && e.filename.includes('main.js')) {
+                console.error('%c❌ MAIN.JS LOADING ERROR', 'color: red; font-size: 16px; font-weight: bold');
+                console.error('Message:', e.message);
+                console.error('File:', e.filename);
+                console.error('Line:', e.lineno);
+            }
+        });
+    </script>
+    <script type="module" src="/src/main.js?v=20251104"></script>
+</body>
+</html>

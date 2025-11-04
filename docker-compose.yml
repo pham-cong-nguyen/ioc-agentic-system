@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ioc-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ioc_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ioc_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ioc_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ioc_user -d ioc_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ioc-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ioc-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ioc-network
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ioc-backend
+    environment:
+      # Application
+      DEBUG: ${DEBUG:-true}
+      HOST: 0.0.0.0
+      PORT: 8862
+      
+      # Database
+      POSTGRES_USER: ${POSTGRES_USER:-ioc_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ioc_password}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ioc_db}
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      
+      # JWT
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-secret-key-change-in-production}
+      
+      # LLM
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      
+      # IOC API
+      IOC_API_BASE_URL: ${IOC_API_BASE_URL:-https://ioc-api.gov.vn/api/v1}
+      IOC_API_KEY: ${IOC_API_KEY}
+    ports:
+      - "${PORT:-8862}:8862"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+      - ./config:/app/config
+      - ./frontend:/app/frontend
+      - ./scripts:/app/scripts
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8862 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8862/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ioc-network
+
+  # Frontend (Development with live reload)
+  frontend:
+    image: node:18-alpine
+    container_name: ioc-frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "3450:3000"
+    command: >
+      sh -c "npm install -g http-server && 
+             http-server /app -p 3000 -c-1 --proxy http://backend:8862"
+    depends_on:
+      - backend
+    networks:
+      - ioc-network
+    # profiles:     # ← BỎ COMMENT dòng này để frontend luôn chạy
+    #   - dev
+
+  # Nginx (Production - serves frontend and proxies API)
+  nginx:
+    image: nginx:alpine
+    container_name: ioc-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+    networks:
+      - ioc-network
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  ioc-network:
+    driver: bridge

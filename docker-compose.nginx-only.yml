@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  # Frontend with Nginx (Lightweight)
+  frontend-nginx:
+    image: nginx:alpine
+    container_name: ioc-frontend-nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx-frontend.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - frontend-network
+
+networks:
+  frontend-network:
+    driver: bridge
