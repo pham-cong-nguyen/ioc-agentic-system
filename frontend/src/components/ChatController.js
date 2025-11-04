@@ -10,27 +10,68 @@ export class ChatController {
         
         this.currentConversationId = null;
         this.messages = [];
+        this.llmModelName = 'Loading...';
         
         this.init();
     }
 
-    init() {
+    async init() {
         this.setupEventListeners();
         this.loadExampleQueries();
+        await this.loadLLMConfig();
+    }
+
+    async loadLLMConfig() {
+        try {
+            const response = await fetch('http://localhost:8862/config/llm');
+            const config = await response.json();
+            this.llmModelName = config.display_name || 'AI Model';
+            
+            // Update UI
+            const modelElement = document.querySelector('.chat-model');
+            if (modelElement) {
+                modelElement.textContent = `Powered by ${this.llmModelName}`;
+            }
+            
+            console.log('🤖 LLM Config loaded:', config);
+        } catch (error) {
+            console.error('❌ Failed to load LLM config:', error);
+            this.llmModelName = 'AI Model';
+        }
     }
 
     setupEventListeners() {
+        console.log('🎯 ChatController: Setting up event listeners...');
+        
         // Send button
         const sendBtn = document.getElementById('sendBtn');
+        console.log('Send button element:', sendBtn);
+        
         if (sendBtn) {
-            sendBtn.addEventListener('click', () => this.sendMessage());
+            console.log('✅ Attaching click listener to send button');
+            sendBtn.addEventListener('click', () => {
+                console.log('🖱️ Send button clicked!');
+                this.sendMessage();
+            });
+            
+            // Test if listener works
+            sendBtn.onclick = () => {
+                console.log('🖱️ Send button onclick triggered!');
+            };
+        } else {
+            console.error('❌ Send button not found!');
         }
 
         // Chat input
         const chatInput = document.getElementById('chatInput');
+        console.log('Chat input element:', chatInput);
+        
         if (chatInput) {
+            console.log('✅ Attaching keydown listener to chat input');
             chatInput.addEventListener('keydown', (e) => {
+                console.log('⌨️ Key pressed:', e.key);
                 if (e.key === 'Enter' && !e.shiftKey) {
+                    console.log('✅ Enter key detected, sending message');
                     e.preventDefault();
                     this.sendMessage();
                 }
@@ -41,28 +82,43 @@ export class ChatController {
                 e.target.style.height = 'auto';
                 e.target.style.height = e.target.scrollHeight + 'px';
             });
+        } else {
+            console.error('❌ Chat input not found!');
         }
 
         // New chat button
         const newChatBtn = document.getElementById('newChat');
         if (newChatBtn) {
-            newChatBtn.addEventListener('click', () => this.startNewChat());
+            console.log('✅ Attaching listener to new chat button');
+            newChatBtn.addEventListener('click', () => {
+                console.log('🖱️ New chat button clicked!');
+                this.startNewChat();
+            });
         }
 
         // Clear chat button
         const clearChatBtn = document.getElementById('clearChat');
         if (clearChatBtn) {
-            clearChatBtn.addEventListener('click', () => this.clearChat());
+            console.log('✅ Attaching listener to clear chat button');
+            clearChatBtn.addEventListener('click', () => {
+                console.log('🖱️ Clear chat button clicked!');
+                this.clearChat();
+            });
         }
 
         // Example queries
+        console.log('✅ Attaching listeners to example queries');
         document.addEventListener('click', (e) => {
             if (e.target.closest('.example-query')) {
+                console.log('🖱️ Example query clicked!');
                 const query = e.target.closest('.example-query').dataset.query;
+                console.log('Query text:', query);
                 document.getElementById('chatInput').value = query;
                 this.sendMessage();
             }
         });
+        
+        console.log('✅ ChatController event listeners setup complete');
     }
 
     async loadHistory() {

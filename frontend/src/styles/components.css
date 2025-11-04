@@ -38,6 +38,7 @@
     flex: 1;
     overflow-y: auto;
     padding: var(--spacing-md);
+    transition: opacity var(--transition-fast), visibility var(--transition-fast);
 }
 
 .chat-item {
@@ -111,10 +112,14 @@
 }
 
 .chat-model::before {
-    content: '●';
-    color: var(--success);
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--success);
     animation: pulse-glow 2s infinite;
-}
+    display: inline-block;
+}   
 
 .chat-actions {
     display: flex;
@@ -562,6 +567,12 @@
     50% { transform: translateY(-10px); }
 }
 
+@keyframes pulse-glow {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.2); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
 /* =====================================================
    Toast Notifications
    ===================================================== */
@@ -613,6 +624,14 @@
     position: fixed;
     inset: 0;
     z-index: 3000;
+    pointer-events: none; /* ← THÊM DÒNG NÀY - cho phép click through khi không có modal */
+    display: none; /* ← HOẶC DÙNG display: none thay vì pointer-events */
+}
+
+/* Khi có modal, enable pointer events */
+.modal-container:not(:empty) {
+    pointer-events: auto;
+    display: block;
 }
 
 .modal {
@@ -621,6 +640,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    pointer-events: auto; /* Modal content có thể click */
 }
 
 .modal-backdrop {

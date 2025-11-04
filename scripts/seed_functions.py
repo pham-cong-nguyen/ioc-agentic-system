@@ -111,6 +111,38 @@ SAMPLE_FUNCTIONS = [
         "timeout": 20
     },
     
+    {
+        "function_id": "nguyenpc2",
+        "name": "nguyenpc2 function",
+        "description": "Analyze domain reputation, DNS records, and associated threats",
+        "domain": Domain.SECURITY,
+        "endpoint": "/api/security/domain/nguyenpc2_check",
+        "method": "GET",
+        "auth_required": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "description": "Domain name to check"},
+                "include_whois": {"type": "boolean", "default": False},
+                "include_dns": {"type": "boolean", "default": True}
+            },
+            "required": ["domain"]
+        },
+        "response_schema": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string"},
+                "risk_score": {"type": "integer"},
+                "category": {"type": "string"},
+                "dns_records": {"type": "object"}
+            }
+        },
+        "tags": ["ioc", "domain", "dns", "reputation"],
+        "rate_limit": 100,
+        "cache_ttl": 1800,
+        "timeout": 20
+    },
+    
     # Threat Intelligence Functions
     {
         "function_id": "query_threat_feed",

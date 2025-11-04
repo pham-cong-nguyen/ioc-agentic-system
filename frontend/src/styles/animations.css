@@ -2,6 +2,20 @@
    IOC Agentic System - Animations
    ===================================================== */
 
+/* Spin Animation for Theme Toggle */
+.animate-spin {
+    animation: spin 0.3s ease-in-out;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(180deg);
+    }
+}
+
 /* Fade Animations */
 .fade-in {
     animation: fadeIn 0.3s ease-out;

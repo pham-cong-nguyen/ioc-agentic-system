@@ -176,6 +176,33 @@ async def health_check():
     }
 
 
+@app.get("/config/llm")
+async def get_llm_config():
+    """Get current LLM provider configuration"""
+    provider = settings.LLM_PROVIDER.lower()
+    
+    # Determine model name and display name
+    config = {
+        "provider": provider,
+        "model": None,
+        "display_name": None
+    }
+    
+    if provider == "gemini":
+        config["model"] = settings.GEMINI_MODEL
+        config["display_name"] = f"Google Gemini ({settings.GEMINI_MODEL})"
+    elif provider == "openai":
+        config["model"] = settings.OPENAI_MODEL
+        config["display_name"] = f"OpenAI ({settings.OPENAI_MODEL})"
+    elif provider == "anthropic":
+        config["model"] = settings.ANTHROPIC_MODEL
+        config["display_name"] = f"Anthropic Claude ({settings.ANTHROPIC_MODEL})"
+    else:
+        config["display_name"] = f"Unknown Provider ({provider})"
+    
+    return config
+
+
 # WebSocket endpoint for streaming responses
 @app.websocket("/ws")
 async def websocket_endpoint(

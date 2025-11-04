@@ -15,6 +15,7 @@ import { ChatController } from './components/ChatController.js';
 import { RegistryController } from './components/RegistryController.js';
 import { AnalyticsController } from './components/AnalyticsController.js';
 import { SettingsController } from './components/SettingsController.js';
+import { ThemeController } from './components/ThemeController.js';
 import { UIManager } from './utils/ui.js';
 import { EventBus } from './utils/eventBus.js';
 
@@ -25,6 +26,7 @@ class App {
         this.api = new ApiService();
         this.ui = new UIManager();
         this.eventBus = new EventBus();
+        this.themeController = new ThemeController();
         this.ws = null;
         this.conversationService = null;
         
@@ -41,17 +43,29 @@ class App {
     async init() {
         console.log('🚀 IOC Agentic System initializing...');
         
+        // Initialize theme controller first (for instant theme application)
+        this.themeController.init();
+        
         // Initialize services
         this.conversationService = new ConversationService(this.api, this.state);
         await this.conversationService.init();
         
         // Initialize controllers
+        console.log('📝 Initializing controllers...');
         this.controllers.chat = new ChatController(this.api, this.state, this.ui, this.conversationService);
+        console.log('✅ Chat controller initialized');
+        
         this.controllers.registry = new RegistryController(this.api, this.state, this.ui);
+        console.log('✅ Registry controller initialized');
+        
         this.controllers.analytics = new AnalyticsController(this.api, this.state, this.ui, this.conversationService);
+        console.log('✅ Analytics controller initialized');
+        
         this.controllers.settings = new SettingsController(this.api, this.state, this.ui, this.conversationService);
+        console.log('✅ Settings controller initialized');
         
         // Setup event listeners
+        console.log('🎯 Setting up event listeners...');
         this.setupEventListeners();
         
         // Initialize UI
@@ -76,19 +90,34 @@ class App {
     }
 
     setupEventListeners() {
+        console.log('🎯 Attaching event listeners to navigation...');
+        
         // Navigation
-        document.querySelectorAll('.nav-item').forEach(item => {
+        const navItems = document.querySelectorAll('.nav-item');
+        console.log(`Found ${navItems.length} nav items`);
+        
+        navItems.forEach((item, index) => {
+            console.log(`Attaching listener to nav item ${index}:`, item.dataset.view);
             item.addEventListener('click', (e) => {
+                console.log('🖱️ Nav item clicked:', item.dataset.view);
                 e.preventDefault();
                 const view = e.currentTarget.dataset.view;
                 this.navigateTo(view);
             });
         });
 
+        // Test if buttons exist
+        const sendBtn = document.getElementById('sendBtn');
+        const chatInput = document.getElementById('chatInput');
+        console.log('Send button exists:', !!sendBtn);
+        console.log('Chat input exists:', !!chatInput);
+
         // Menu toggle for mobile
         const menuToggle = document.getElementById('menuToggle');
         if (menuToggle) {
+            console.log('Menu toggle found, attaching listener');
             menuToggle.addEventListener('click', () => {
+                console.log('Menu toggle clicked');
                 document.querySelector('.sidebar').classList.toggle('open');
             });
         }
@@ -96,7 +125,9 @@ class App {
         // Theme toggle
         const themeToggle = document.getElementById('themeToggle');
         if (themeToggle) {
+            console.log('Theme toggle found, attaching listener');
             themeToggle.addEventListener('click', () => {
+                console.log('Theme toggle clicked');
                 this.toggleTheme();
             });
         }
@@ -104,7 +135,9 @@ class App {
         // Global search
         const globalSearch = document.getElementById('globalSearch');
         if (globalSearch) {
+            console.log('Global search found, attaching listener');
             globalSearch.addEventListener('input', (e) => {
+                console.log('Global search input:', e.target.value);
                 this.handleGlobalSearch(e.target.value);
             });
         }
@@ -112,6 +145,8 @@ class App {
         // Subscribe to events
         this.eventBus.on('auth:logout', () => this.handleLogout());
         this.eventBus.on('error', (error) => this.handleError(error));
+        
+        console.log('✅ Event listeners setup complete');
     }
 
     initializeUI() {
@@ -320,15 +355,23 @@ class App {
     }
 }
 
-// Initialize app when DOM is ready
 console.log('%c⏳ Waiting for DOMContentLoaded...', 'color: #f59e0b; font-weight: bold');
+console.log('Document readyState:', document.readyState);
 
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('%c✅ DOMContentLoaded fired!', 'color: #10b981; font-size: 14px; font-weight: bold');
-    console.log('Creating App instance...');
+if (document.readyState === 'loading') {
+    console.log('Document still loading, waiting...');
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('%c✅ DOMContentLoaded fired!', 'color: #10b981; font-size: 14px; font-weight: bold');
+        console.log('Creating App instance...');
+        window.app = new App();
+        console.log('%c✅ App instance created', 'color: #10b981; font-weight: bold');
+        console.log('App instance:', window.app);
+    });
+} else {
+    console.log('Document already loaded, creating app immediately');
     window.app = new App();
-    console.log('%c✅ App instance created', 'color: #10b981; font-weight: bold');
-});
+    console.log('App instance:', window.app);
+}
 
 // Handle errors globally
 window.addEventListener('error', (event) => {
