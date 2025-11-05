@@ -1,11 +1,16 @@
 """
 Function Registry API Routes
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
+import logging
+from backend.registry.sync_service import SyncService
+import logging
 
 from backend.registry.service import FunctionRegistryService
+from backend.registry.sync_service import SyncService
 from backend.registry.schemas import (
     FunctionMetadataCreate,
     FunctionMetadataUpdate,
@@ -17,6 +22,8 @@ from backend.registry.schemas import (
     Domain
 )
 from backend.utils.database import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/registry", tags=["Function Registry"])
 
@@ -261,7 +268,7 @@ async def update_function(
 
 @router.delete(
     "/functions/{function_id}",
-    status_code=status.HTTP_204_NO_CONTENT
+    status_code=status.HTTP_200_OK
 )
 async def delete_function(
     function_id: str,
@@ -277,7 +284,10 @@ async def delete_function(
             detail=f"Function {function_id} not found"
         )
     
-    return None
+    return {
+        "success": True,
+        "message": f"Function {function_id} deleted successfully"
+    }
 
 
 @router.get("/domains")
@@ -294,3 +304,124 @@ async def get_statistics(db: AsyncSession = Depends(get_db)):
     service = FunctionRegistryService(db)
     stats = await service.get_statistics()
     return stats
+
+
+@router.post("/sync")
+async def sync_to_milvus(db: AsyncSession = Depends(get_db)):
+    """
+    Sync all functions from PostgreSQL to Milvus vector database.
+    
+    This endpoint:
+    1. Loads all functions from PostgreSQL
+    2. Generates embeddings using sentence transformers
+    3. Indexes them into Milvus for semantic search
+    
+    Returns:
+        Sync statistics including success status and count
+    """
+    service = FunctionRegistryService(db)
+    
+    try:
+        result = await service.sync_to_milvus()
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": result["message"],
+                "synced_count": result["synced_count"],
+                "failed_count": result["failed_count"]
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "message": result["message"],
+                    "errors": result["errors"]
+                }
+            )
+    except Exception as e:
+        logger.error(f"Sync endpoint error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Sync failed: {str(e)}"
+        )
+
+
+# ============================================================================
+# CDC-BASED SMART SYNC ENDPOINTS
+# ============================================================================
+
+@router.post("/sync/process")
+async def process_sync_events(
+    background_tasks: BackgroundTasks,
+    batch_size: int = Query(10, ge=1, le=100, description="Number of events to process"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Process pending sync events in background.
+    
+    This endpoint:
+    1. Finds pending sync events in sync_events table
+    2. Processes them in batch (generates embeddings, syncs to Milvus)
+    3. Updates sync_status accordingly
+    
+    Uses background tasks for async processing.
+    """
+    sync_service = SyncService(db)
+    
+    # Check if there are pending events
+    stats = await sync_service.get_sync_statistics()
+    pending_count = stats.get("pending", 0)
+    
+    if pending_count == 0:
+        return {
+            "success": True,
+            "message": "No pending events to process",
+            "pending_count": 0
+        }
+    
+    # Process events in background
+    background_tasks.add_task(
+        sync_service.process_pending_events,
+        batch_size=batch_size
+    )
+    
+    return {
+        "success": True,
+        "message": f"Processing {min(pending_count, batch_size)} pending events in background",
+        "pending_count": pending_count,
+        "batch_size": batch_size
+    }
+
+
+@router.get("/sync/statistics")
+async def get_sync_statistics(db: AsyncSession = Depends(get_db)):
+    """
+    Get sync statistics.
+    
+    Returns:
+        Statistics about sync events including pending, synced, failed counts
+    """
+    sync_service = SyncService(db)
+    stats = await sync_service.get_sync_statistics()
+    return stats
+
+
+@router.get("/sync/status")
+async def get_sync_status(db: AsyncSession = Depends(get_db)):
+    """
+    Get current sync status.
+    
+    Returns:
+        Current status of sync system including pending events count
+    """
+    sync_service = SyncService(db)
+    stats = await sync_service.get_sync_statistics()
+    
+    return {
+        "status": "healthy" if stats["failed"] == 0 else "degraded",
+        "pending_events": stats["pending"],
+        "synced_events": stats["synced"],
+        "failed_events": stats["failed"],
+        "recent_failures": stats["recent_failures"][:5]  # Top 5 failures
+    }

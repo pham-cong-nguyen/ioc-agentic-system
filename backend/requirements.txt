@@ -62,3 +62,7 @@ black==23.12.0
 flake8==6.1.0
 mypy==1.7.1
 isort==5.13.2
+
+sentence_transformers==5.1.2
+einops==0.8.1
+pymilvus==2.3.4

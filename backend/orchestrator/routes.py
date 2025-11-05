@@ -7,10 +7,12 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 from backend.orchestrator.graph import orchestrator
+from backend.orchestrator.graph_v3 import orchestrator_v3  # ReAct orchestrator
 from backend.auth.service import get_current_user
 
 router = APIRouter(prefix="/query", tags=["Query Processing"])
 conversations_router = APIRouter(prefix="/conversations", tags=["Conversations"])
+react_router = APIRouter(prefix="/react", tags=["ReAct Agent"])  # New ReAct routes
 
 
 class ConversationSummary(BaseModel):
@@ -67,6 +69,32 @@ class QueryHistory(BaseModel):
     processing_time_ms: float
 
 
+class ReActQueryRequest(BaseModel):
+    """ReAct query request with RAG and memory"""
+    query: str = Field(..., description="Natural language query", min_length=1)
+    user_id: str = Field(..., description="User ID for profile and history")
+    conversation_id: Optional[str] = Field(None, description="Conversation ID (creates new if not provided)")
+    language: str = Field(default="vi", description="Response language (vi/en)")
+    
+    # Optional configurations
+    rag_config: Optional[Dict[str, Any]] = Field(
+        None,
+        description="RAG configuration: {stage1_top_k, stage2_top_k, domain_filter}"
+    )
+    react_config: Optional[Dict[str, Any]] = Field(
+        None,
+        description="ReAct configuration: {max_iterations, quality_threshold}"
+    )
+
+
+class ReActQueryResponse(BaseModel):
+    """ReAct query response"""
+    success: bool
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
 @router.post("/", response_model=QueryResponse)
 async def process_query(
     request: QueryRequest,
@@ -99,32 +127,33 @@ async def process_query(
         # Format execution plan
         execution_plan = None
         if final_state.execution_plan:
+            ep = final_state.execution_plan
             execution_plan = {
                 "function_calls": [
                     {
-                        "function_id": fc.function_id,
-                        "name": fc.name,
-                        "parameters": fc.parameters,
-                        "order": fc.order
+                        "function_id": fc.function_id if hasattr(fc, 'function_id') else fc.get("function_id"),
+                        "name": fc.name if hasattr(fc, 'name') else fc.get("name"),
+                        "parameters": fc.parameters if hasattr(fc, 'parameters') else fc.get("parameters"),
+                        "order": fc.order if hasattr(fc, 'order') else fc.get("order", 0)
                     }
-                    for fc in final_state.execution_plan.function_calls
+                    for fc in (ep.function_calls if hasattr(ep, 'function_calls') else ep.get("function_calls", []))
                 ],
-                "execution_mode": final_state.execution_plan.execution_mode,
-                "reasoning": final_state.execution_plan.reasoning
+                "execution_mode": ep.execution_mode if hasattr(ep, 'execution_mode') else ep.get("execution_mode"),
+                "reasoning": ep.reasoning if hasattr(ep, 'reasoning') else ep.get("reasoning")
             }
         
         # Format execution results
-        execution_results = [
-            {
-                "function_id": r.function_id,
-                "success": r.success,
-                "data": r.data,
-                "error": r.error,
-                "execution_time_ms": r.execution_time_ms,
-                "cached": r.cached
-            }
-            for r in final_state.execution_results
-        ] if final_state.execution_results else []
+        execution_results = []
+        if final_state.execution_results:
+            for r in final_state.execution_results:
+                execution_results.append({
+                    "function_id": r.function_id if hasattr(r, 'function_id') else r.get("function_id"),
+                    "success": r.success if hasattr(r, 'success') else r.get("success"),
+                    "data": r.data if hasattr(r, 'data') else r.get("data"),
+                    "error": r.error if hasattr(r, 'error') else r.get("error"),
+                    "execution_time_ms": r.execution_time_ms if hasattr(r, 'execution_time_ms') else r.get("execution_time_ms"),
+                    "cached": r.cached if hasattr(r, 'cached') else r.get("cached", False)
+                })
         
         # TODO: Save to conversation history database
         
@@ -306,3 +335,60 @@ async def delete_conversation(
         "message": "Conversation deleted successfully",
         "conversation_id": conversation_id
     }
+
+
+# ============================================================================
+# ReAct Agent v3 Routes - NEW
+# ============================================================================
+
+@react_router.post("/query", response_model=ReActQueryResponse)
+async def process_react_query(
+    request: ReActQueryRequest
+):
+    """
+    Process query with ReAct agent (RAG + Memory + Self-Reflection).
+    
+    Features:
+    - RAG-based function retrieval (Milvus vector search + LLM reranking)
+    - User profile & preferences
+    - Conversation history
+    - Self-reflection loop (THINK → ACT → OBSERVE → REFLECT)
+    """
+    result = await orchestrator_v3.process_query(
+        query=request.query,
+        user_id=request.user_id,
+        conversation_id=request.conversation_id,
+        language=request.language,
+        rag_config=request.rag_config,
+        react_config=request.react_config
+    )
+    
+    return ReActQueryResponse(**result)
+
+
+@react_router.get("/conversations/{conversation_id}")
+async def get_react_conversation(
+    conversation_id: str,
+    limit: int = 10
+):
+    """Get conversation history for ReAct agent"""
+    result = await orchestrator_v3.get_conversation_history(
+        conversation_id=conversation_id,
+        limit=limit
+    )
+    
+    return result
+
+
+@react_router.get("/users/{user_id}/conversations")
+async def get_user_react_conversations(
+    user_id: str,
+    limit: int = 20
+):
+    """Get user's conversation list"""
+    result = await orchestrator_v3.get_user_conversations(
+        user_id=user_id,
+        limit=limit
+    )
+    
+    return result

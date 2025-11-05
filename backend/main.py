@@ -15,7 +15,8 @@ from typing import Optional
 
 from config.settings import settings
 from backend.registry.routes import router as registry_router
-from backend.orchestrator.routes import router as orchestrator_router, conversations_router
+from backend.orchestrator.routes import router as orchestrator_router, conversations_router, react_router
+from backend.orchestrator.routes_v2 import router as react_v2_router  # ReAct V2
 from backend.auth.routes import router as auth_router
 from backend.utils.database import init_db, close_db
 from backend.utils.cache import cache
@@ -155,6 +156,8 @@ app.include_router(auth_router, prefix=settings.API_PREFIX)
 app.include_router(registry_router, prefix=settings.API_PREFIX)
 app.include_router(orchestrator_router, prefix=settings.API_PREFIX)
 app.include_router(conversations_router, prefix=settings.API_PREFIX)
+app.include_router(react_router, prefix=settings.API_PREFIX)  # ReAct v3 routes
+app.include_router(react_v2_router, prefix=f"{settings.API_PREFIX}/agent")  # ReAct V2 routes
 
 
 # Mount static files for frontend

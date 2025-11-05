@@ -316,6 +316,55 @@ If no visualization is appropriate, return null.
             logger.error(f"Error suggesting visualization: {e}")
             return None
 
+    async def generate(
+        self,
+        prompt: str = None,
+        system_prompt: str = None,
+        user_prompt: str = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048
+    ) -> str:
+        """
+        General purpose text generation.
+        
+        Args:
+            prompt: Combined prompt (if system_prompt and user_prompt not provided)
+            system_prompt: System instructions (optional)
+            user_prompt: User input (optional)
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            
+        Returns:
+            Generated text response
+        """
+        try:
+            # Support both single prompt and separate system/user prompts
+            if prompt is not None:
+                messages = [HumanMessage(content=prompt)]
+            else:
+                messages = []
+                if system_prompt:
+                    messages.append(SystemMessage(content=system_prompt))
+                if user_prompt:
+                    messages.append(HumanMessage(content=user_prompt))
+            
+            # Temporarily override temperature if specified
+            original_temp = getattr(self.llm, 'temperature', None)
+            if hasattr(self.llm, 'temperature'):
+                self.llm.temperature = temperature
+            
+            response = await self.llm.ainvoke(messages)
+            
+            # Restore original temperature
+            if original_temp is not None and hasattr(self.llm, 'temperature'):
+                self.llm.temperature = original_temp
+            
+            return response.content
+            
+        except Exception as e:
+            logger.error(f"Text generation error: {e}")
+            raise
+
 
 # Global LLM service instance
 llm_service = LLMService()

@@ -16,6 +16,7 @@ import { RegistryController } from './components/RegistryController.js';
 import { AnalyticsController } from './components/AnalyticsController.js';
 import { SettingsController } from './components/SettingsController.js';
 import { ThemeController } from './components/ThemeController.js';
+import { SyncController } from './components/SyncController.js';
 import { UIManager } from './utils/ui.js';
 import { EventBus } from './utils/eventBus.js';
 
@@ -34,7 +35,8 @@ class App {
             chat: null,
             registry: null,
             analytics: null,
-            settings: null
+            settings: null,
+            sync: null
         };
         
         this.init();
@@ -63,6 +65,9 @@ class App {
         
         this.controllers.settings = new SettingsController(this.api, this.state, this.ui, this.conversationService);
         console.log('✅ Settings controller initialized');
+        
+        this.controllers.sync = new SyncController(this.api, this.ui);
+        console.log('✅ Sync controller initialized');
         
         // Setup event listeners
         console.log('🎯 Setting up event listeners...');

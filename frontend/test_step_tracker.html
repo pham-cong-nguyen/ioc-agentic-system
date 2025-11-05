@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Step Tracker</title>
+    <link rel="stylesheet" href="/src/styles/main.css">
+    <link rel="stylesheet" href="/src/styles/components.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="dark-theme">
+    <div style="max-width: 800px; margin: 50px auto; padding: 20px;">
+        <h1>Test Step Tracker Component</h1>
+        
+        <button id="testBtn" style="padding: 10px 20px; margin: 20px 0; cursor: pointer;">
+            Test API V2 & Show Steps
+        </button>
+        
+        <div id="result" style="margin-top: 20px;"></div>
+    </div>
+
+    <script type="module">
+        import { StepTracker } from './src/components/StepTracker.js';
+        import { ApiService } from './src/services/api.js';
+
+        const api = new ApiService();
+        const stepTracker = new StepTracker();
+
+        document.getElementById('testBtn').addEventListener('click', async () => {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Loading...</p>';
+
+            try {
+                // Call V2 API
+                const response = await api.processQueryV2(
+                    'Năng lượng miền Bắc hôm nay',
+                    'vi',
+                    null
+                );
+
+                console.log('V2 Response:', response);
+
+                // Clear and show response
+                resultDiv.innerHTML = `
+                    <div style="background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <h3>Response:</h3>
+                        <p>${response.response}</p>
+                        <p style="color: #94a3b8; font-size: 0.875rem;">
+                            Steps: ${response.total_steps} | 
+                            API Calls: ${response.total_api_calls} | 
+                            Time: ${(response.processing_time_ms / 1000).toFixed(2)}s | 
+                            Quality: ${(response.quality_score * 100).toFixed(0)}%
+                        </p>
+                    </div>
+                    <div id="stepTrackerContainer"></div>
+                `;
+
+                // Render step tracker
+                const container = document.getElementById('stepTrackerContainer');
+                stepTracker.createStepTrackerUI(
+                    container,
+                    response.steps || [],
+                    response.api_calls || []
+                );
+
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+                console.error('Error:', error);
+            }
+        });
+    </script>
+</body>
+</html>

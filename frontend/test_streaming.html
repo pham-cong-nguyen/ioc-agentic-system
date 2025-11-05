@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test SSE Streaming - ReAct Agent V2</title>
+    <link rel="stylesheet" href="/src/styles/main.css">
+    <link rel="stylesheet" href="/src/styles/components.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Markdown & Code Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    
+    <style>
+        body {
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .controls {
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .controls h2 {
+            margin-top: 0;
+            color: #60a5fa;
+        }
+        .test-queries {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .test-query-btn {
+            padding: 10px 15px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+        .test-query-btn:hover {
+            background: #2563eb;
+            transform: translateY(-2px);
+        }
+        .custom-query {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .custom-query input {
+            flex: 1;
+            padding: 10px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: white;
+            font-size: 0.875rem;
+        }
+        .custom-query button {
+            padding: 10px 20px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .result-container {
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 8px;
+            min-height: 200px;
+        }
+        .mode-toggle {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .mode-toggle label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body class="dark-theme">
+    <div class="controls">
+        <h2>🧪 Test SSE Streaming - ReAct Agent V2</h2>
+        
+        <p style="color: #94a3b8; font-size: 0.875rem;">
+            Test Server-Sent Events streaming để xem steps hiển thị real-time như OpenAI
+        </p>
+
+        <div class="test-queries">
+            <button class="test-query-btn" data-query="Năng lượng miền Bắc hôm nay">
+                ⚡ Năng lượng miền Bắc
+            </button>
+            <button class="test-query-btn" data-query="So sánh điện năng miền Bắc và miền Nam">
+                📊 So sánh khu vực
+            </button>
+            <button class="test-query-btn" data-query="Xu hướng tiêu thụ điện tháng này">
+                📈 Xu hướng điện năng
+            </button>
+        </div>
+
+        <div class="custom-query">
+            <input type="text" id="customQuery" placeholder="Nhập câu hỏi tùy chỉnh..." />
+            <button id="customQueryBtn">Gửi</button>
+        </div>
+
+        <div class="mode-toggle">
+            <label>
+                <input type="radio" name="mode" value="streaming" checked />
+                🔄 Streaming Mode (SSE)
+            </label>
+            <label>
+                <input type="radio" name="mode" value="static" />
+                📦 Static Mode (JSON)
+            </label>
+        </div>
+    </div>
+
+    <div class="result-container" id="result">
+        <p style="color: #94a3b8; text-align: center; padding: 40px 0;">
+            👆 Chọn một query để test streaming
+        </p>
+    </div>
+
+    <script type="module">
+        import { StreamingStepTracker } from './src/components/StreamingStepTracker.js';
+        import { StepTracker } from './src/components/StepTracker.js';
+        import { ApiService } from './src/services/api.js';
+
+        const streamingTracker = new StreamingStepTracker();
+        const staticTracker = new StepTracker();
+        const api = new ApiService();
+        const resultDiv = document.getElementById('result');
+
+        // Test query buttons
+        document.querySelectorAll('.test-query-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const query = btn.dataset.query;
+                processQuery(query);
+            });
+        });
+
+        // Custom query button
+        document.getElementById('customQueryBtn').addEventListener('click', () => {
+            const query = document.getElementById('customQuery').value.trim();
+            if (query) {
+                processQuery(query);
+            }
+        });
+
+        // Custom query enter key
+        document.getElementById('customQuery').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const query = e.target.value.trim();
+                if (query) {
+                    processQuery(query);
+                }
+            }
+        });
+
+        async function processQuery(query) {
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            
+            resultDiv.innerHTML = '';
+            
+            console.log(`🚀 Processing query: "${query}" in ${mode} mode`);
+            
+            try {
+                if (mode === 'streaming') {
+                    // Use SSE streaming
+                    await streamingTracker.startStreaming(
+                        resultDiv,
+                        query,
+                        'test_user',
+                        null
+                    );
+                } else {
+                    // Use static JSON response
+                    resultDiv.innerHTML = '<p style="color: #94a3b8;">Loading...</p>';
+                    
+                    const response = await api.processQueryV2(query, 'vi', null);
+                    
+                    console.log('✅ Response:', response);
+                    
+                    resultDiv.innerHTML = `
+                        <div style="background: #0f172a; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
+                            <h3 style="margin-top: 0;">📝 Response:</h3>
+                            <p style="color: #e2e8f0;">${response.response}</p>
+                            <div style="display: flex; gap: 20px; margin-top: 10px; font-size: 0.75rem; color: #94a3b8;">
+                                <span>⏱️ ${(response.processing_time_ms / 1000).toFixed(2)}s</span>
+                                <span>📊 Quality: ${(response.quality_score * 100).toFixed(0)}%</span>
+                                <span>🔢 Steps: ${response.total_steps}</span>
+                                <span>🔌 API Calls: ${response.total_api_calls}</span>
+                            </div>
+                        </div>
+                        <div id="staticSteps"></div>
+                    `;
+                    
+                    const stepsContainer = document.getElementById('staticSteps');
+                    staticTracker.createStepTrackerUI(
+                        stepsContainer,
+                        response.steps || [],
+                        response.api_calls || []
+                    );
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div style="background: rgba(239, 68, 68, 0.1); padding: 15px; border-radius: 6px; color: #ef4444;">
+                        <strong>❌ Error:</strong> ${error.message}
+                    </div>
+                `;
+                console.error('Error:', error);
+            }
+        }
+    </script>
+</body>
+</html>

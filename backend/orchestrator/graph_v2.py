@@ -1,6 +1,5 @@
-"""
-LangGraph-based orchestration graph for IOC Agentic System
-"""
+# backend/orchestrator/graph.py - FIX DATABASE INTEGRATION
+
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -11,9 +10,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from backend.orchestrator.state import AgentState, ExecutionPlan, FunctionCall, ExecutionResult
 from backend.orchestrator.llm_service import llm_service
 from backend.registry.service import FunctionRegistryService
-from backend.executor.service import APIExecutor
-from backend.analyzer.service import DataAnalyzer
-from backend.utils.database import get_db
+from backend.executor.service import executor
+from backend.analyzer.service import analyzer
+from backend.utils.database import get_db_context
 
 logger = logging.getLogger(__name__)
 
@@ -22,16 +21,13 @@ class OrchestrationGraph:
     """LangGraph orchestration for query processing"""
     
     def __init__(self):
-        # Services will be initialized lazily when needed with proper DB session
-        self.registry_service = None
-        self.executor = APIExecutor()
-        self.analyzer = DataAnalyzer()
+        self.executor = executor
+        self.analyzer = analyzer
         self.graph = self._build_graph()
     
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph state graph"""
         
-        # Create graph with checkpointing for conversation memory
         workflow = StateGraph(AgentState)
         
         # Add nodes
@@ -45,11 +41,9 @@ class OrchestrationGraph:
         
         # Define edges
         workflow.set_entry_point("parse_query")
-        
         workflow.add_edge("parse_query", "search_functions")
         workflow.add_edge("search_functions", "plan_execution")
         
-        # Conditional edge: if plan is valid, execute, else error
         workflow.add_conditional_edges(
             "plan_execution",
             self._should_execute,
@@ -59,7 +53,6 @@ class OrchestrationGraph:
             }
         )
         
-        # Conditional edge: if execution successful, analyze, else error
         workflow.add_conditional_edges(
             "execute_functions",
             self._execution_successful,
@@ -80,7 +73,6 @@ class OrchestrationGraph:
         logger.info(f"Parsing query: {state.query}")
         
         try:
-            # Parse query using LLM
             intent = await llm_service.parse_query(
                 query=state.query,
                 language=state.language,
@@ -98,7 +90,7 @@ class OrchestrationGraph:
             return {"error": f"Failed to parse query: {str(e)}"}
     
     async def search_functions_node(self, state: AgentState) -> Dict[str, Any]:
-        """Node: Search for relevant functions based on parsed intent"""
+        """Node: Search for relevant functions - FIXED WITH DB SESSION"""
         logger.info(f"Searching functions for intent: {state.parsed_intent}")
         
         try:
@@ -114,39 +106,51 @@ class OrchestrationGraph:
             search_terms.append(state.parsed_intent)
             search_query = " ".join(search_terms)
             
-            # TODO: Implement proper DB session injection for registry service
-            # For now, return empty list to allow backend to start
-            relevant_functions = []
-            
-            # Search registry (disabled until DB session is properly injected)
-            # if self.registry_service:
-            #     functions = await self.registry_service.search_functions(
-            #         query=search_query,
-            #         domain=state.extracted_entities.get("domain") if state.extracted_entities else None,
-            #         limit=10
-            #     )
-            #     
-            #     # Convert to dict format
-            #     relevant_functions = [
-            #         {
-            #             "function_id": func.function_id,
-            #             "name": func.name,
-            #             "description": func.description,
-            #             "domain": func.domain,
-            #             "method": func.method,
-            #             "endpoint": func.endpoint,
-            #             "parameters": func.parameters,
-            #             "response_schema": func.response_schema
-            #         }
-            #         for func in functions
-            #     ]
+            # 🔥 FIX: Use database context manager to get session
+            async with get_db_context() as db:
+                registry_service = FunctionRegistryService(db)
+                
+                # Search functions in database
+                from backend.registry.schemas import FunctionSearchQuery, Domain
+                
+                # Convert domain string to enum
+                domain_filter = None
+                if state.extracted_entities and state.extracted_entities.get("domain"):
+                    domain_str = state.extracted_entities["domain"]
+                    try:
+                        domain_filter = Domain(domain_str.lower())
+                    except ValueError:
+                        logger.warning(f"Invalid domain: {domain_str}")
+                
+                search_obj = FunctionSearchQuery(
+                    query=search_query,
+                    domain=domain_filter,
+                    limit=10
+                )
+                
+                functions_list, total = await registry_service.search_functions(search_obj)
+                
+                # Convert to dict format
+                relevant_functions = [
+                    {
+                        "function_id": func.function_id,
+                        "name": func.name,
+                        "description": func.description,
+                        "domain": func.domain,
+                        "method": func.method,
+                        "endpoint": func.endpoint,
+                        "parameters": func.parameters,
+                        "response_schema": func.response_schema
+                    }
+                    for func in functions_list
+                ]
             
             logger.info(f"Found {len(relevant_functions)} relevant functions")
             return {"relevant_functions": relevant_functions}
         
         except Exception as e:
-            logger.error(f"Error in search_functions_node: {e}")
-            return {"error": f"Failed to search functions: {str(e)}"}
+            logger.error(f"Error in search_functions_node: {e}", exc_info=True)
+            return {"relevant_functions": [], "error": f"Failed to search functions: {str(e)}"}
     
     async def plan_execution_node(self, state: AgentState) -> Dict[str, Any]:
         """Node: Plan function execution using LLM"""
@@ -157,9 +161,18 @@ class OrchestrationGraph:
                 return {"error": "No relevant functions found for query"}
             
             # Use LLM to select functions and create plan
+            from backend.orchestrator.llm_service import QueryIntent
+            
+            intent_obj = QueryIntent(
+                intent=state.parsed_intent or "data_query",
+                entities=state.extracted_entities or {},
+                query_type=state.query_type or "unknown",
+                confidence=0.8
+            )
+            
             selection = await llm_service.select_functions(
                 query=state.query,
-                intent=state.parsed_intent,
+                intent=intent_obj,
                 available_functions=state.relevant_functions,
                 language=state.language
             )
@@ -190,7 +203,7 @@ class OrchestrationGraph:
             return {"execution_plan": execution_plan}
         
         except Exception as e:
-            logger.error(f"Error in plan_execution_node: {e}")
+            logger.error(f"Error in plan_execution_node: {e}", exc_info=True)
             return {"error": f"Failed to plan execution: {str(e)}"}
     
     async def execute_functions_node(self, state: AgentState) -> Dict[str, Any]:
@@ -201,23 +214,29 @@ class OrchestrationGraph:
             if not state.execution_plan:
                 return {"error": "No execution plan"}
             
-            results = []
-            
-            # Execute based on mode
-            if state.execution_plan.execution_mode == "parallel":
-                results = await self.executor.execute_parallel(
-                    [
-                        {"function_id": fc.function_id, "parameters": fc.parameters}
-                        for fc in state.execution_plan.function_calls
-                    ]
-                )
-            else:
-                results = await self.executor.execute_sequential(
-                    [
-                        {"function_id": fc.function_id, "parameters": fc.parameters}
-                        for fc in state.execution_plan.function_calls
-                    ]
-                )
+            # Get registry service for executor
+            async with get_db_context() as db:
+                registry_service = FunctionRegistryService(db)
+                
+                results = []
+                
+                # Execute based on mode
+                if state.execution_plan.execution_mode == "parallel":
+                    results = await self.executor.execute_parallel(
+                        [
+                            {"function_id": fc.function_id, "parameters": fc.parameters}
+                            for fc in state.execution_plan.function_calls
+                        ],
+                        registry_service
+                    )
+                else:
+                    results = await self.executor.execute_sequential(
+                        [
+                            {"function_id": fc.function_id, "parameters": fc.parameters}
+                            for fc in state.execution_plan.function_calls
+                        ],
+                        registry_service
+                    )
             
             # Convert to ExecutionResult objects
             execution_results = [
@@ -226,7 +245,7 @@ class OrchestrationGraph:
                     success=r["success"],
                     data=r.get("data"),
                     error=r.get("error"),
-                    execution_time_ms=r.get("execution_time_ms", 0),
+                    execution_time_ms=r.get("execution_time", 0) * 1000,  # Convert to ms
                     cached=r.get("cached", False)
                 )
                 for r in results
@@ -236,7 +255,7 @@ class OrchestrationGraph:
             return {"execution_results": execution_results}
         
         except Exception as e:
-            logger.error(f"Error in execute_functions_node: {e}")
+            logger.error(f"Error in execute_functions_node: {e}", exc_info=True)
             return {"error": f"Failed to execute functions: {str(e)}"}
     
     async def analyze_results_node(self, state: AgentState) -> Dict[str, Any]:
@@ -259,21 +278,21 @@ class OrchestrationGraph:
             # Perform analysis
             analyzed_data = await self.analyzer.analyze(
                 data=combined_data,
-                query_type=state.query_type,
+                query_type=state.query_type or "data_query",
                 entities=state.extracted_entities
             )
             
             # Generate insights
             insights = await self.analyzer.generate_insights(
                 data=analyzed_data,
-                query_type=state.query_type
+                query_type=state.query_type or "data_query"
             )
             
             logger.info(f"Generated {len(insights)} insights")
             return {"analyzed_data": analyzed_data, "insights": insights}
         
         except Exception as e:
-            logger.error(f"Error in analyze_results_node: {e}")
+            logger.error(f"Error in analyze_results_node: {e}", exc_info=True)
             return {"analyzed_data": None, "insights": [f"Analysis error: {str(e)}"]}
     
     async def generate_response_node(self, state: AgentState) -> Dict[str, Any]:
@@ -304,7 +323,7 @@ class OrchestrationGraph:
             if state.analyzed_data:
                 visualization_config = await llm_service.suggest_visualization(
                     data=state.analyzed_data,
-                    query_type=state.query_type
+                    query_type=state.query_type or "data_query"
                 )
             
             processing_time = (datetime.utcnow() - state.created_at).total_seconds() * 1000
@@ -317,7 +336,7 @@ class OrchestrationGraph:
             }
         
         except Exception as e:
-            logger.error(f"Error in generate_response_node: {e}")
+            logger.error(f"Error in generate_response_node: {e}", exc_info=True)
             return {"response": "Unable to generate response due to an error.", "error": str(e)}
     
     async def handle_error_node(self, state: AgentState) -> Dict[str, Any]:
@@ -338,33 +357,18 @@ class OrchestrationGraph:
     
     def _should_execute(self, state: AgentState) -> str:
         """Conditional: Check if execution plan is valid"""
-        # Handle both dict and object
-        error = state.get("error") if isinstance(state, dict) else state.error
-        execution_plan = state.get("execution_plan") if isinstance(state, dict) else state.execution_plan
-        
-        if error:
+        if state.error:
             return "error"
-        if execution_plan:
-            function_calls = execution_plan.get("function_calls") if isinstance(execution_plan, dict) else execution_plan.function_calls
-            if function_calls:
-                return "execute"
+        if state.execution_plan and state.execution_plan.function_calls:
+            return "execute"
         return "error"
     
     def _execution_successful(self, state: AgentState) -> str:
         """Conditional: Check if execution was successful"""
-        # Handle both dict and object
-        error = state.get("error") if isinstance(state, dict) else state.error
-        execution_results = state.get("execution_results") if isinstance(state, dict) else state.execution_results
-        
-        if error:
+        if state.error:
             return "error"
-        if execution_results:
-            has_success = any(
-                (r.get("success") if isinstance(r, dict) else r.success) 
-                for r in execution_results
-            )
-            if has_success:
-                return "analyze"
+        if state.execution_results and any(r.success for r in state.execution_results):
+            return "analyze"
         return "error"
     
     async def process_query(
@@ -383,14 +387,8 @@ class OrchestrationGraph:
             conversation_id=conversation_id
         )
         
-        # Convert Pydantic model to dict for LangGraph
-        state_dict = initial_state.model_dump()
-        
         config = {"configurable": {"thread_id": conversation_id or "default"}}
-        final_state_dict = await self.graph.ainvoke(state_dict, config)
-        
-        # Convert back to AgentState
-        final_state = AgentState(**final_state_dict)
+        final_state = await self.graph.ainvoke(initial_state, config)
         
         return final_state
     
@@ -401,3 +399,22 @@ class OrchestrationGraph:
 
 # Global orchestrator instance
 orchestrator = OrchestrationGraph()
+
+if __name__ == "__main__":
+    import asyncio
+    
+    async def main():
+        user_id = "user_123"
+        conversation_id = "conv_1"
+        query = "Lấy dữ liệu tiêu thụ điện năng trong tháng trước tại Hà Nội"
+        # result_state = await orchestrator.process_query(query=query, language="vi", user_id=user_id, conversation_id=conversation_id)
+        # print("Final Response:", result_state.response)
+        # print("Insights:", result_state.insights)
+        orchestrator = OrchestrationGraph()
+        result_state = await orchestrator.parse_query_node(AgentState(
+            query=query,
+            language="vi"
+        ))
+        print(result_state)
+    
+    asyncio.run(main())

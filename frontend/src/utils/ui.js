@@ -157,6 +157,52 @@ export class UIManager {
         ]);
     }
 
+    showDialog(title, content, size = 'medium') {
+        const modal = document.createElement('div');
+        modal.className = 'modal fade-in';
+        
+        const sizeClass = size === 'large' ? 'max-width: 900px;' : size === 'small' ? 'max-width: 400px;' : 'max-width: 600px;';
+
+        modal.innerHTML = `
+            <div class="modal-backdrop"></div>
+            <div class="modal-dialog scale-in" style="${sizeClass}">
+                <div class="modal-header">
+                    <h3>${title}</h3>
+                    <button class="btn-icon modal-close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    ${content}
+                </div>
+            </div>
+        `;
+
+        this.modalContainer.innerHTML = ''; // Clear existing modals
+        this.modalContainer.appendChild(modal);
+
+        // Setup event handlers
+        modal.querySelector('.modal-close').addEventListener('click', () => {
+            this.closeDialog();
+        });
+
+        modal.querySelector('.modal-backdrop').addEventListener('click', () => {
+            this.closeDialog();
+        });
+    }
+
+    closeDialog() {
+        if (this.modalContainer) {
+            const modal = this.modalContainer.querySelector('.modal');
+            if (modal) {
+                modal.classList.add('fade-out');
+                setTimeout(() => {
+                    this.modalContainer.innerHTML = '';
+                }, 300);
+            }
+        }
+    }
+
     // =====================================================
     // Utility Methods
     // =====================================================

@@ -2,6 +2,9 @@
  * Chat Controller - Handle chat interface logic
  */
 
+import { StepTracker } from './StepTracker.js';
+import { StreamingStepTracker } from './StreamingStepTracker.js';
+
 export class ChatController {
     constructor(api, state, ui) {
         this.api = api;
@@ -11,6 +14,9 @@ export class ChatController {
         this.currentConversationId = null;
         this.messages = [];
         this.llmModelName = 'Loading...';
+        this.stepTracker = new StepTracker();
+        this.streamingStepTracker = new StreamingStepTracker();
+        this.useStreaming = true; // Toggle streaming mode
         
         this.init();
     }
@@ -188,44 +194,157 @@ export class ChatController {
         // Add user message to UI
         this.addMessage('user', query);
 
-        // Show loading
-        const loadingId = this.addLoadingMessage();
+        // Create assistant message container with streaming placeholder
+        const assistantMessageId = this.addStreamingMessage();
 
         try {
             // Detect language
             const language = this.detectLanguage(query);
 
-            // Send to API
-            const response = await this.api.processQuery(
-                query,
-                language,
-                this.currentConversationId
-            );
-
-            // Remove loading
-            this.removeMessage(loadingId);
-
-            // Add assistant response
-            this.addMessage('assistant', response.response, {
-                executionPlan: response.execution_plan,
-                executionResults: response.execution_results,
-                insights: response.insights,
-                visualizationConfig: response.visualization_config,
-                processingTime: response.processing_time_ms
-            });
+            if (this.useStreaming) {
+                // Use streaming mode
+                await this.sendStreamingMessage(query, language, assistantMessageId);
+            } else {
+                // Use non-streaming mode (fallback)
+                await this.sendNonStreamingMessage(query, language, assistantMessageId);
+            }
 
             // Store conversation ID
             if (!this.currentConversationId) {
-                this.currentConversationId = response.query_id;
+                this.currentConversationId = `conv_${Date.now()}`;
             }
 
         } catch (error) {
-            this.removeMessage(loadingId);
+            this.removeMessage(assistantMessageId);
             this.addMessage('assistant', 'Xin lỗi, đã xảy ra lỗi khi xử lý yêu cầu của bạn. Vui lòng thử lại.', {
                 error: error.message
             });
             this.ui.showToast('Failed to process query', 'error');
         }
+    }
+
+    async sendStreamingMessage(query, language, messageId) {
+        const messageEl = document.querySelector(`[data-id="${messageId}"]`);
+        if (!messageEl) return;
+
+        const contentEl = messageEl.querySelector('.message-content');
+        
+        // Create streaming container
+        const streamContainer = document.createElement('div');
+        streamContainer.className = 'streaming-container';
+        contentEl.innerHTML = ''; // Clear loading
+        contentEl.appendChild(streamContainer);
+
+        // Start streaming
+        this.startAutoScroll();
+        await this.streamingStepTracker.startStreaming(
+            streamContainer,
+            query,
+            'default_user',
+            this.currentConversationId
+        );
+        this.stopAutoScroll();
+    }
+
+    async sendNonStreamingMessage(query, language, messageId) {
+        // Existing non-streaming implementation
+        const response = await this.api.processQueryV2(
+            query,
+            language,
+            this.currentConversationId
+        );
+
+        // Remove loading message
+        this.removeMessage(messageId);
+
+        // Add assistant response with steps
+        this.addMessage('assistant', response.response, {
+            steps: response.steps || [],
+            apiCalls: response.api_calls || [],
+            totalSteps: response.total_steps,
+            totalApiCalls: response.total_api_calls,
+            processingTime: response.processing_time_ms,
+            qualityScore: response.quality_score
+        });
+    }
+
+    /**
+     * Start auto-scroll interval for streaming messages
+     */
+    startAutoScroll() {
+        if (this.autoScrollInterval) {
+            return; // Already scrolling
+        }
+        
+        const messagesContainer = document.getElementById('chatMessages');
+        if (!messagesContainer) return;
+        
+        // Scroll every 100ms during streaming
+        this.autoScrollInterval = setInterval(() => {
+            const isNearBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < 200;
+            
+            if (isNearBottom) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+        }, 100);
+        
+        console.log('🔄 Auto-scroll started');
+    }
+
+    /**
+     * Stop auto-scroll interval
+     */
+    stopAutoScroll() {
+        if (this.autoScrollInterval) {
+            clearInterval(this.autoScrollInterval);
+            this.autoScrollInterval = null;
+            console.log('⏹️ Auto-scroll stopped');
+        }
+        
+        // Final scroll to ensure we're at bottom
+        const messagesContainer = document.getElementById('chatMessages');
+        if (messagesContainer) {
+            setTimeout(() => {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }, 100);
+        }
+    }
+
+    addStreamingMessage() {
+        const messagesContainer = document.getElementById('chatMessages');
+        if (!messagesContainer) return null;
+
+        const messageId = `msg-${Date.now()}-${Math.random()}`;
+        const message = {
+            id: messageId,
+            role: 'assistant',
+            content: '',
+            timestamp: new Date(),
+            metadata: { streaming: true }
+        };
+
+        this.messages.push(message);
+
+        const messageEl = document.createElement('div');
+        messageEl.className = 'message assistant fade-in';
+        messageEl.dataset.id = messageId;
+        messageEl.innerHTML = `
+            <div class="message-avatar">
+                <i class="fas fa-robot"></i>
+            </div>
+            <div class="message-content">
+                <div class="typing-indicator">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        `;
+
+        messagesContainer.appendChild(messageEl);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        return messageId;
     }
 
     addMessage(role, content, metadata = {}) {
@@ -263,6 +382,18 @@ export class ChatController {
 
         let metadataHTML = '';
         
+        // Add step tracker for assistant messages with steps
+        if (message.role === 'assistant' && message.metadata.steps && message.metadata.steps.length > 0) {
+            const stepTrackerContainer = document.createElement('div');
+            stepTrackerContainer.className = 'step-tracker-wrapper';
+            this.stepTracker.createStepTrackerUI(
+                stepTrackerContainer, 
+                message.metadata.steps,
+                message.metadata.apiCalls || []
+            );
+            // We'll append this later
+        }
+        
         if (message.metadata.insights && message.metadata.insights.length > 0) {
             metadataHTML += `
                 <div class="message-insights">
@@ -282,6 +413,11 @@ export class ChatController {
                 <div class="message-stats">
                     <i class="fas fa-clock"></i>
                     <span>${(message.metadata.processingTime / 1000).toFixed(2)}s</span>
+                    ${message.metadata.qualityScore ? `
+                        <span class="quality-badge" title="Quality Score">
+                            <i class="fas fa-star"></i> ${(message.metadata.qualityScore * 100).toFixed(0)}%
+                        </span>
+                    ` : ''}
                 </div>
             `;
         }
@@ -308,6 +444,20 @@ export class ChatController {
                 </div>
             </div>
         `;
+
+        // Insert step tracker before message-meta if exists
+        if (message.role === 'assistant' && message.metadata.steps && message.metadata.steps.length > 0) {
+            const messageContent = div.querySelector('.message-content');
+            const messageMeta = div.querySelector('.message-meta');
+            const stepTrackerContainer = document.createElement('div');
+            stepTrackerContainer.className = 'step-tracker-wrapper';
+            this.stepTracker.createStepTrackerUI(
+                stepTrackerContainer, 
+                message.metadata.steps,
+                message.metadata.apiCalls || []
+            );
+            messageContent.insertBefore(stepTrackerContainer, messageMeta);
+        }
 
         // Add action handlers
         div.querySelectorAll('.message-action-btn').forEach(btn => {

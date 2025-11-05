@@ -59,6 +59,8 @@ node_modules/
 .pytest_cache/
 .coverage
 htmlcov/
+tests/
+scripts/
 
 # Logs
 logs/

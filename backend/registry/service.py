@@ -14,6 +14,8 @@ from backend.registry.schemas import (
     FunctionSearchQuery
 )
 from backend.utils.cache import cache
+from backend.registry.sync_service import SyncService
+from backend.registry.sync_models import OperationType
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,20 @@ class FunctionRegistryService:
         await cache.delete("functions:all")
         
         logger.info(f"Created function: {function_data.function_id}")
+
+        # Log sync event for background worker
+        try:
+            sync_service = SyncService(self.db)
+            await sync_service.log_event(
+                entity_type='function',
+                entity_id=function_data.function_id,
+                operation=OperationType.INSERT,
+                old_data=None,
+                new_data=db_function.to_dict()
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log sync event for create_function: {e}")
+
         return db_function
     
     async def get_function(
@@ -105,6 +121,20 @@ class FunctionRegistryService:
         await cache.delete("functions:all")
         
         logger.info(f"Updated function: {function_id}")
+
+        # Log sync event for background worker
+        try:
+            sync_service = SyncService(self.db)
+            await sync_service.log_event(
+                entity_type='function',
+                entity_id=function_id,
+                operation=OperationType.UPDATE,
+                old_data=None,
+                new_data=function.to_dict()
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log sync event for update_function: {e}")
+
         return function
     
     async def delete_function(self, function_id: str) -> bool:
@@ -112,6 +142,9 @@ class FunctionRegistryService:
         function = await self.get_function(function_id, use_cache=False)
         if not function:
             return False
+        
+        # Keep a snapshot
+        old_snapshot = function.to_dict()
         
         await self.db.delete(function)
         await self.db.commit()
@@ -121,6 +154,20 @@ class FunctionRegistryService:
         await cache.delete("functions:all")
         
         logger.info(f"Deleted function: {function_id}")
+
+        # Log delete event
+        try:
+            sync_service = SyncService(self.db)
+            await sync_service.log_event(
+                entity_type='function',
+                entity_id=function_id,
+                operation=OperationType.DELETE,
+                old_data=old_snapshot,
+                new_data=None
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log sync event for delete_function: {e}")
+
         return True
     
     async def list_functions(
@@ -354,3 +401,111 @@ class FunctionRegistryService:
             "by_domain": by_domain,
             "most_called": most_called
         }
+    
+    async def sync_to_milvus(self) -> Dict[str, Any]:
+        """
+        Sync all functions from PostgreSQL to Milvus vector database.
+        This creates embeddings for all functions and indexes them in Milvus.
+        
+        Returns:
+            Dict with sync statistics
+        """
+        import os
+        from backend.registry.embeddings.sentence_transformer_embedder import SentenceTransformerEmbedder
+        from backend.registry.embeddings.milvus_store import MilvusStore
+        from backend.registry.embeddings.rag_retriever import RAGRetriever
+        
+        logger.info("Starting sync to Milvus...")
+        
+        result = {
+            "success": False,
+            "synced_count": 0,
+            "failed_count": 0,
+            "errors": [],
+            "message": ""
+        }
+        
+        try:
+            # Load all functions from PostgreSQL
+            functions, total = await self.list_functions(limit=10000)
+            
+            if not functions:
+                result["message"] = "No functions found in database"
+                result["success"] = True
+                return result
+            
+            logger.info(f"Found {total} functions to sync")
+            
+            # Convert to format expected by RAG retriever
+            function_list = []
+            for func in functions:
+                # Handle domain: it could be an enum or already a string
+                domain_value = func.domain
+                if hasattr(domain_value, 'value'):
+                    domain_value = domain_value.value
+                elif domain_value is None:
+                    domain_value = "general"
+                
+                func_dict = {
+                    "id": func.function_id,
+                    "name": func.name,
+                    "description": func.description,
+                    "category": domain_value,
+                    "endpoint": func.endpoint,
+                    "method": func.method,
+                    "parameters": func.parameters if func.parameters else {},
+                    "tags": func.tags if func.tags else [],
+                    "auth_required": func.auth_required
+                }
+                function_list.append(func_dict)
+            
+            # Initialize embedder and vector store
+            embedder = SentenceTransformerEmbedder(
+                model_name="jinaai/jina-embeddings-v3",
+                device="cuda:0" if os.getenv("USE_GPU", "false").lower() == "true" else "cpu"
+            )
+            
+            vector_store = MilvusStore(
+                host=os.getenv("MILVUS_HOST", "localhost"),
+                port=int(os.getenv("MILVUS_PORT", "19530")),
+                collection_name=os.getenv("MILVUS_COLLECTION", "function_embeddings"),
+                dimension=embedder.dimension
+            )
+            
+            retriever = RAGRetriever(
+                embedder=embedder,
+                vector_store=vector_store
+            )
+            
+            # Clear existing data (optional - comment out to preserve)
+            existing_count = vector_store.count()
+            if existing_count > 0:
+                logger.info(f"Clearing {existing_count} existing embeddings...")
+                vector_store.clear()
+            
+            # Index all functions
+            logger.info(f"Indexing {len(function_list)} functions...")
+            retriever.index_functions(function_list)
+            
+            # Verify
+            final_count = vector_store.count()
+            logger.info(f"Sync complete: {final_count} functions in Milvus")
+            
+            result["success"] = True
+            result["synced_count"] = final_count
+            result["message"] = f"Successfully synced {final_count} functions to Milvus"
+            
+        except ImportError as e:
+            logger.error(f"Import error during sync: {e}")
+            result["errors"].append(f"Missing dependencies: {str(e)}")
+            result["message"] = "Failed to import required modules. Check if embeddings modules are available."
+        except ConnectionError as e:
+            logger.error(f"Connection error during sync: {e}")
+            result["errors"].append(f"Connection error: {str(e)}")
+            result["message"] = "Failed to connect to Milvus. Check if Milvus is running."
+        except Exception as e:
+            logger.error(f"Error during sync: {e}", exc_info=True)
+            result["errors"].append(str(e))
+            result["message"] = f"Sync failed: {str(e)}"
+        
+        return result

@@ -118,6 +118,11 @@ export class RegistryController {
                 e.stopPropagation();
                 this.deleteFunction(functionId);
             });
+
+            card.querySelector('[data-action="test"]')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.testFunction(functionId);
+            });
         });
     }
 
@@ -152,6 +157,9 @@ export class RegistryController {
                         </div>
                     </div>
                     <div class="function-actions">
+                        <button class="btn-icon btn-test" data-action="test" title="Test API">
+                            <i class="fas fa-flask"></i>
+                        </button>
                         <button class="btn-icon" data-action="edit" title="Edit">
                             <i class="fas fa-edit"></i>
                         </button>
@@ -363,11 +371,31 @@ export class RegistryController {
         if (confirmed === 'confirm') {
             try {
                 this.ui.showLoading('Deleting function...');
-                await this.api.deleteFunction(functionId);
+                const response = await this.api.deleteFunction(functionId);
+                
+                // Remove from local arrays
+                this.functions = this.functions.filter(f => f.function_id !== functionId);
+                this.filteredFunctions = this.filteredFunctions.filter(f => f.function_id !== functionId);
+                
+                // Remove DOM element immediately
+                const card = document.querySelector(`.function-card[data-id="${functionId}"]`);
+                if (card) {
+                    card.remove();
+                }
+                
+                // Update state
+                this.state.setState({ functions: this.functions });
+                
                 this.ui.showToast('Function deleted successfully', 'success');
-                await this.loadFunctions();
+                
+                // Dispatch event for sync controller
+                window.dispatchEvent(new CustomEvent('function-deleted', { 
+                    detail: { functionId } 
+                }));
+                
             } catch (error) {
-                this.ui.showToast('Failed to delete function', 'error');
+                console.error('Failed to delete function:', error);
+                this.ui.showToast(`Failed to delete function: ${error.message}`, 'error');
             } finally {
                 this.ui.hideLoading();
             }
@@ -410,6 +438,218 @@ export class RegistryController {
             this.ui.showToast('Functions exported successfully', 'success');
         } catch (error) {
             this.ui.showToast('Failed to export functions', 'error');
+        }
+    }
+
+    async testFunction(functionId) {
+        const func = this.functions.find(f => f.function_id === functionId);
+        if (!func) return;
+
+        // Build parameter input fields
+        const paramInputs = [];
+        if (func.parameters && typeof func.parameters === 'object') {
+            for (const [paramName, paramSchema] of Object.entries(func.parameters)) {
+                const isRequired = paramSchema.required || false;
+                const paramType = paramSchema.type || 'string';
+                const description = paramSchema.description || '';
+                const defaultVal = paramSchema.default !== undefined ? paramSchema.default : '';
+                
+                let inputField = '';
+                if (paramType === 'boolean') {
+                    inputField = `
+                        <select id="param_${paramName}" ${isRequired ? 'required' : ''}>
+                            <option value="true">true</option>
+                            <option value="false" ${!defaultVal ? 'selected' : ''}>false</option>
+                        </select>
+                    `;
+                } else if (paramSchema.enum) {
+                    const options = paramSchema.enum.map(val => 
+                        `<option value="${val}">${val}</option>`
+                    ).join('');
+                    inputField = `
+                        <select id="param_${paramName}" ${isRequired ? 'required' : ''}>
+                            <option value="">-- Select --</option>
+                            ${options}
+                        </select>
+                    `;
+                } else if (paramType === 'array' || paramType === 'object') {
+                    inputField = `
+                        <textarea id="param_${paramName}" 
+                                  placeholder='${paramType === 'array' ? '["item1", "item2"]' : '{"key": "value"}'}'
+                                  rows="3"
+                                  ${isRequired ? 'required' : ''}></textarea>
+                    `;
+                } else {
+                    inputField = `
+                        <input type="text" 
+                               id="param_${paramName}" 
+                               placeholder="${description || paramName}"
+                               value="${defaultVal}"
+                               ${isRequired ? 'required' : ''}>
+                    `;
+                }
+
+                paramInputs.push(`
+                    <div class="form-group">
+                        <label for="param_${paramName}">
+                            ${paramName}
+                            ${isRequired ? '<span class="required">*</span>' : ''}
+                            ${description ? `<span class="param-desc">${description}</span>` : ''}
+                        </label>
+                        ${inputField}
+                    </div>
+                `);
+            }
+        }
+
+        const content = `
+            <div class="test-function-dialog">
+                <div class="test-info">
+                    <div class="test-info-row">
+                        <strong>Function:</strong> ${func.name}
+                    </div>
+                    <div class="test-info-row">
+                        <strong>Method:</strong> <span class="badge method">${func.method}</span>
+                    </div>
+                    <div class="test-info-row">
+                        <strong>Endpoint:</strong> <code>${func.endpoint}</code>
+                    </div>
+                </div>
+
+                <form id="testFunctionForm">
+                    ${paramInputs.length > 0 ? `
+                        <h4>Parameters</h4>
+                        ${paramInputs.join('')}
+                    ` : '<p class="text-muted">No parameters required</p>'}
+
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" onclick="window.app.ui.closeDialog()">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn-primary">
+                            <i class="fas fa-play"></i> Run Test
+                        </button>
+                    </div>
+                </form>
+
+                <div id="testResults" class="test-results" style="display: none;">
+                    <h4>Results</h4>
+                    <div class="result-status"></div>
+                    <div class="result-body"></div>
+                </div>
+            </div>
+        `;
+
+        this.ui.showDialog(`Test API: ${func.name}`, content, 'large');
+
+        // Setup form submission
+        const form = document.getElementById('testFunctionForm');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await this.executeTest(func, form);
+        });
+    }
+
+    async executeTest(func, form) {
+        const resultsDiv = document.getElementById('testResults');
+        const statusDiv = resultsDiv.querySelector('.result-status');
+        const bodyDiv = resultsDiv.querySelector('.result-body');
+
+        try {
+            // Collect parameters
+            const params = {};
+            if (func.parameters && typeof func.parameters === 'object') {
+                for (const paramName of Object.keys(func.parameters)) {
+                    const input = form.querySelector(`#param_${paramName}`);
+                    if (input && input.value) {
+                        const paramSchema = func.parameters[paramName];
+                        let value = input.value;
+
+                        // Parse based on type
+                        if (paramSchema.type === 'boolean') {
+                            value = value === 'true';
+                        } else if (paramSchema.type === 'number' || paramSchema.type === 'integer') {
+                            value = Number(value);
+                        } else if (paramSchema.type === 'array' || paramSchema.type === 'object') {
+                            try {
+                                value = JSON.parse(value);
+                            } catch (e) {
+                                throw new Error(`Invalid JSON for parameter "${paramName}"`);
+                            }
+                        }
+
+                        params[paramName] = value;
+                    }
+                }
+            }
+
+            // Show loading
+            statusDiv.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> Testing...</div>';
+            resultsDiv.style.display = 'block';
+            bodyDiv.innerHTML = '';
+
+            // Make API call
+            const startTime = Date.now();
+            let response;
+            
+            if (func.method === 'GET') {
+                // For GET, add params as query string
+                const queryString = new URLSearchParams(params).toString();
+                const url = queryString ? `${func.endpoint}?${queryString}` : func.endpoint;
+                response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            } else {
+                // For POST/PUT/PATCH, send params in body
+                response = await fetch(func.endpoint, {
+                    method: func.method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(params)
+                });
+            }
+
+            const duration = Date.now() - startTime;
+            const responseData = await response.json();
+
+            // Show results
+            const statusClass = response.ok ? 'success' : 'error';
+            statusDiv.innerHTML = `
+                <div class="status-badge ${statusClass}">
+                    <i class="fas fa-${response.ok ? 'check-circle' : 'exclamation-circle'}"></i>
+                    ${response.status} ${response.statusText}
+                    <span class="duration">${duration}ms</span>
+                </div>
+            `;
+
+            bodyDiv.innerHTML = `
+                <div class="response-section">
+                    <div class="response-header">
+                        <strong>Response Body:</strong>
+                        <button class="btn-icon" onclick="navigator.clipboard.writeText(this.parentElement.nextElementSibling.textContent)" title="Copy">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    <pre class="response-body">${JSON.stringify(responseData, null, 2)}</pre>
+                </div>
+            `;
+
+        } catch (error) {
+            statusDiv.innerHTML = `
+                <div class="status-badge error">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Error
+                </div>
+            `;
+            bodyDiv.innerHTML = `
+                <div class="error-message">
+                    <strong>Error:</strong> ${error.message}
+                </div>
+            `;
         }
     }
 

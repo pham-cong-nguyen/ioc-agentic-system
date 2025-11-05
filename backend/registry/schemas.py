@@ -141,3 +141,14 @@ class BulkImportResponse(BaseModel):
     successful: int
     failed: int
     errors: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class SyncResponse(BaseModel):
+    """Sync functions to vector database response"""
+    status: str = Field(..., description="Sync status: success, partial, failed")
+    message: str = Field(..., description="Human-readable message")
+    total_functions: int = Field(..., description="Total functions in PostgreSQL")
+    synced_count: int = Field(..., description="Number of functions synced to Milvus")
+    failed_count: int = Field(0, description="Number of functions that failed to sync")
+    errors: List[Dict[str, Any]] = Field(default_factory=list, description="Error details")
+    duration_ms: float = Field(..., description="Sync duration in milliseconds")

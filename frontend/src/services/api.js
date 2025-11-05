@@ -40,13 +40,19 @@ export class ApiService {
                 throw new Error(error.detail || error.message || `HTTP ${response.status}`);
             }
 
+            // For DELETE with 204 No Content, return success object
+            if (response.status === 204) {
+                return { success: true };
+            }
+
             // Return json if content-type is json
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
                 return await response.json();
             }
 
-            return response;
+            // Default return for successful requests
+            return { success: true };
         } catch (error) {
             console.error(`API Error [${endpoint}]:`, error);
             throw error;
@@ -109,6 +115,14 @@ export class ApiService {
 
     async processQuery(query, language = 'vi', conversationId = null) {
         return this.post('/query', {
+            query,
+            language,
+            conversation_id: conversationId
+        });
+    }
+
+    async processQueryV2(query, language = 'vi', conversationId = null) {
+        return this.post('/agent/v2/query', {
             query,
             language,
             conversation_id: conversationId

@@ -1,0 +1,14 @@
+# RAG & Embeddings
+pymilvus==2.3.4
+sentence-transformers==2.7.0
+
+# Additional for embeddings
+torch>=2.0.0
+numpy>=1.24.0
+huggingface-hub>=0.20.0
+
+# HTTP client for Jina AI API (if using cloud)
+httpx>=0.24.0
+
+# Fix for opentelemetry dependency conflict
+opentelemetry-exporter-prometheus==0.43b0

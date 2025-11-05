@@ -73,6 +73,16 @@ services:
       # IOC API
       IOC_API_BASE_URL: ${IOC_API_BASE_URL:-https://ioc-api.gov.vn/api/v1}
       IOC_API_KEY: ${IOC_API_KEY}
+      
+      # Milvus Vector Database
+      MILVUS_HOST: ${MILVUS_HOST:-sandbox-milvus}
+      MILVUS_PORT: ${MILVUS_PORT:-19530}
+      MILVUS_COLLECTION: ${MILVUS_COLLECTION:-function_embeddings}
+      
+      # RAG Configuration
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-small-en-v1.5}
+      RAG_STAGE1_TOP_K: ${RAG_STAGE1_TOP_K:-50}
+      RAG_STAGE2_TOP_K: ${RAG_STAGE2_TOP_K:-5}
     ports:
       - "${PORT:-8862}:8862"
     depends_on:
@@ -86,6 +96,13 @@ services:
       - ./frontend:/app/frontend
       - ./scripts:/app/scripts
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8862 --reload
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8862/health"]
       interval: 30s
@@ -93,6 +110,7 @@ services:
       retries: 3
     networks:
       - ioc-network
+      - sandbox-network
 
   # Frontend (Development with live reload)
   frontend:
@@ -139,3 +157,5 @@ volumes:
 networks:
   ioc-network:
     driver: bridge
+  sandbox-network:
+    external: true

@@ -1,0 +1,47 @@
+# 🐳 Dockerfile for Sandbox Environment
+# Isolated environment for RAG + Memory testing
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements-rag.txt /app/
+COPY backend/requirements.txt /app/backend-requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r /app/backend-requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements-rag.txt
+
+# Install additional packages for sandbox
+RUN pip install --no-cache-dir \
+    uvicorn[standard] \
+    httpx \
+    pytest \
+    pytest-asyncio
+
+# Copy application code
+COPY backend /app/backend
+COPY config /app/config
+COPY scripts /app/scripts
+
+# Create necessary directories
+RUN mkdir -p /app/logs
+
+# Set environment
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Expose port
+EXPOSE 8000
+
+# Default command (overridden in docker-compose)
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
